@@ -33,8 +33,12 @@ class Decryptor extends Cryptor {
 				break;
 
 			case 'cbc':
-				$paddedPlaintext = mcrypt_decrypt($this->_settings->algorithm, $key, $components->ciphertext, 'cbc', $components->headers->iv);
-				$plaintext = $this->_stripPKCS7Padding($paddedPlaintext);
+				if ($this->_cryptLib == 'OPENSSL') {
+					$plaintext = $this->_decrypt_internal($key, $components->ciphertext, 'cbc', $components->headers->iv);
+				} else {
+					$paddedPlaintext = $this->_decrypt_internal($key, $components->ciphertext, 'cbc', $components->headers->iv);
+					$plaintext = $this->_stripPKCS7Padding($paddedPlaintext);
+				}
 				break;
 		}
 
@@ -96,7 +100,19 @@ class Decryptor extends Cryptor {
 
 	private function _hmacIsValid($components, $password) {
 		$hmacKey = $this->_generateKey($components->headers->hmacSalt, $password);
-		return hash_equals($components->hmac, $this->_generateHmac($components, $hmacKey));
+		$hmac = $this->_generateHmac($components, $hmacKey);
+		if(!function_exists('hash_equals')) {
+			if(strlen($components->hmac) != strlen($hmac)) {
+				return false;
+			} else {
+				$res = $components->hmac ^ $hmac;
+				$ret = 0;
+				for($i = strlen($res) - 1; $i >= 0; $i--) $ret |= ord($res[$i]);
+				return !$ret;
+			}
+		} else {
+			return hash_equals($components->hmac, $this->_generateHmac($components, $hmacKey));
+		}
 	}
 
 }

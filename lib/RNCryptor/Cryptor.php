@@ -5,11 +5,15 @@ class Cryptor {
 
 	const DEFAULT_SCHEMA_VERSION = 3;
 
+	protected $_cryptLib = 'MCRYPT';
 	protected $_settings;
 
 	public function __construct() {
 		if (!extension_loaded('mcrypt')) {
-			throw new \Exception('The mcrypt extension is missing.');
+			if (!extension_loaded('openssl')) {
+				throw new \Exception('The mcrypt or openssl extension is required.');
+			}
+			$this->_cryptLib = 'OPENSSL';
 		}
 	}
 
@@ -17,7 +21,11 @@ class Cryptor {
 
 		$settings = new \stdClass();
 
-		$settings->algorithm = MCRYPT_RIJNDAEL_128;
+		if ($this->_cryptLib == 'OPENSSL') {
+			$settings->algorithm = 'aes-256-';
+		} else {
+			$settings->algorithm = MCRYPT_RIJNDAEL_128;
+		}
 		$settings->saltLength = 8;
 		$settings->ivLength = 16;
 
@@ -73,6 +81,26 @@ class Cryptor {
 		$this->_settings = $settings;
 	}
 
+	protected function _decrypt_internal($key, $payload, $mode, $iv = null) {
+		if ($this->_cryptLib == 'OPENSSL') {
+			if ($iv == null) {
+				$iv = "";
+			}
+			return openssl_decrypt($payload, $this->_settings->algorithm.$mode, $key, OPENSSL_RAW_DATA, $iv);
+		}
+		return mcrypt_decrypt($this->_settings->algorithm, $key, $payload, $mode, $iv);
+	}
+
+	protected function _encrypt_internal($key, $payload, $mode, $iv = null) {
+		if ($this->_cryptLib == 'OPENSSL') {
+			if ($iv == null) {
+				$iv = "";
+			}
+			return openssl_encrypt($payload, $this->_settings->algorithm.$mode, $key, OPENSSL_RAW_DATA, $iv);
+		}
+        return mcrypt_encrypt($this->_settings->algorithm, $key, $payload, $mode, $iv);
+	}
+
 	/**
 	 * Encrypt or decrypt using AES CTR Little Endian mode
 	 */
@@ -89,7 +117,8 @@ class Cryptor {
 			$iv[0] = chr(ord($iv[0]) + 1);
 		}
 
-		return $payload ^ mcrypt_encrypt($this->_settings->algorithm, $key, $counter, 'ecb');
+		//return $payload ^ mcrypt_encrypt($this->_settings->algorithm, $key, $counter, 'ecb');
+		return $payload ^ $this->_encrypt_internal($key, $counter, 'ecb');
 	}
 
 	protected function _generateHmac(\stdClass $components, $hmacKey) {
